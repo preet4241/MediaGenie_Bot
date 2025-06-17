@@ -1,7 +1,2 @@
-os
-json
-asyncio
-tempfile
 yt_dlp
-logging
-telegram 
+python-telegram-bot==13.15
