@@ -8,6 +8,7 @@ import yt_dlp
 import asyncio
 from urllib.parse import urlparse, parse_qs
 import shutil
+import threading
 from datetime import datetime
 
 # Logging setup
@@ -18,7 +19,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Bot Token - Get from environment variable or use default
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7881316549:AAF6114H4tcf3QtpmYHEB49MjfheFRzC5oM")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+LIVE_LOG_CHANNEL_ID = -1002727649483
+DOWNLOAD_LOG_CHANNEL_ID = -1002570532630
 
 # Files to store data
 DATA_FILE = "video_data.json"
@@ -1006,6 +1009,29 @@ async def download_and_send_video(query, video_data, quality, video_id):
         f"• Premium content\n\n"
         f"Try a different YouTube video."
     )
+    
+
+def live_log_loop():
+    import time
+    while True:
+        try:
+            log_message = f"🤖 Bot is alive\n🕒 {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            requests.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                data={
+                    'chat_id': LIVE_LOG_CHANNEL_ID,
+                    'text': log_message,
+                    'parse_mode': 'Markdown'
+                }
+            )
+            time.sleep(15)
+        except Exception as e:
+            logger.error(f"Live log error: {e}")
+            time.sleep(15)
+
+# Start live logger in background
+threading.Thread(target=live_log_loop, daemon=True).start()
+
 
 def main():
     """Start the bot"""
