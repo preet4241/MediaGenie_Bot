@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 # Bot Token - Get from environment variable or use default
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-LIVE_LOG_CHANNEL_ID = -1002727649483
-DOWNLOAD_LOG_CHANNEL_ID = -1002570532630
+LIVE_LOG_CHANNEL_ID = os.getenv("LIVE_LOG_CHANNEL_ID")
+DOWNLOAD_LOG_CHANNEL_ID = os.getenv("DOWNLOAD_LOG_CHANNEL_ID")
 
 # Files to store data
 DATA_FILE = "video_data.json"
@@ -529,7 +529,7 @@ async def download_and_send_video_new(query, video_info, quality, video_id, cont
 
                     print(f"DEBUG: Detected quality: {downloaded_quality}")
 
-                except Exception as e:
+                               except Exception as e:
                     logger.error(f"Error in download process: {e}")
                     downloaded_quality = quality  # Fallback to requested
 
@@ -699,6 +699,29 @@ async def download_and_send_video_new(query, video_info, quality, video_id, cont
                     supports_streaming=True
                 )
 
+                user = query.from_user
+                log_text = (
+                    f"🎬 *Video Downloaded!*\n"
+                    f"👤 *User:* [{user.first_name}](tg://user?id={user.id}) (`{user.id}`)\n"
+                    f"🔗 *Link:* {video_info['url'] if 'url' in video_info else video_data['url']}\n"
+                    f"📥 *Quality:* {quality}\n"
+                    f"🆔 *File ID:* `{message.video.file_id}`\n"
+                    f"🕒 *Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+
+                try:
+                   requests.post(
+                       f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                       data={
+                           'chat_id': DOWNLOAD_LOG_CHANNEL_ID,
+                           'text': log_text,
+                           'parse_mode': 'Markdown'
+                        }
+                    )
+
+                except Exception as e:
+                    logger.error(f"Failed to send download log: {e}")
+
                 # Save to database
                 file_id = message.video.file_id
                 if video_id not in bot_instance.video_data:
@@ -737,279 +760,6 @@ async def download_and_send_video_new(query, video_info, quality, video_id, cont
         f"Try a different YouTube video."
     )
 
-async def download_and_send_video(query, video_data, quality, video_id):
-    """Download and send video for existing entry"""
-    await query.edit_message_text(f"⬇️ **Downloading {quality} video...**\n*Please wait...*", parse_mode='Markdown')
-
-    # Enhanced quality mapping with more fallback options
-    quality_formats = {
-        '240p': [
-            'worst[height<=240]',
-            'worst[height<=360]/worst[height<=240]',
-            'worst[ext=mp4][height<=240]',
-            'worst[ext=webm][height<=240]',
-            'worst[height<=360]',
-            'worst'
-        ],
-        '360p': [
-            'worst[height<=360]',
-            'best[height<=360]/worst[height<=360]',
-            'worst[ext=mp4][height<=360]',
-            'worst[ext=webm][height<=360]',
-            'worst[height<=480]',
-            'worst'
-        ],
-        '480p': [
-            'best[height<=480]',
-            'worst[height<=480]',
-            'best[ext=mp4][height<=480]',
-            'best[ext=webm][height<=480]',
-            'best[height<=720]/worst[height<=480]',
-            'best[height<=480]/worst'
-        ],
-        '1080p': [
-            'best[height<=1080]',
-            'best[ext=mp4][height<=1080]',
-            'best[ext=webm][height<=1080]',
-            'best[height<=720]',
-            'best[height<=1080]/best',
-            'best'
-        ]
-    }
-
-    filename = f"{video_id}_temp.%(ext)s"
-
-    # Try different format options
-    downloaded_quality = None
-    for format_option in quality_formats[quality]:
-        ydl_opts = {
-            'format': format_option,
-            'outtmpl': f'downloads/{filename}',
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'writethumbnail': False,
-            'writeinfojson': False,
-            'ignoreerrors': False,
-            'retries': 3,
-            'fragment_retries': 3,
-            'socket_timeout': 30,
-            'prefer_ffmpeg': True,
-            'postprocessors': []
-        }
-
-        # Add FFmpeg postprocessor if available
-        if shutil.which('ffmpeg'):
-            ydl_opts['postprocessors'].append({
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4',
-            })
-
-        try:
-            # Create downloads directory if it doesn't exist
-            os.makedirs('downloads', exist_ok=True)
-
-            # Download video first and then detect quality from actual file
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([video_data['url']])
-
-            # Find downloaded file
-            downloaded_file = None
-            for file in os.listdir('downloads'):
-                if file.startswith(f"{video_id}_temp"):
-                    downloaded_file = f"downloads/{file}"
-                    break
-
-            if downloaded_file and os.path.exists(downloaded_file):
-                # Now get the actual video info to detect real quality
-                try:
-                    with yt_dlp.YoutubeDL({'quiet': True}) as ydl_check:
-                        actual_info = ydl_check.extract_info(video_data['url'], download=False)
-
-                        # Find the format that was actually selected by checking file size
-                        file_size = os.path.getsize(downloaded_file)
-
-                        # Try to match format by comparing with available formats
-                        best_match_height = None
-                        for fmt in actual_info.get('formats', []):
-                            if fmt.get('filesize') and abs(fmt['filesize'] - file_size) < 1000000:  # 1MB tolerance
-                                best_match_height = fmt.get('height')
-                                break
-
-                        # If no exact match, use format selection logic
-                        if not best_match_height:
-                            try:
-                                # Simulate format selection to get actual quality
-                                test_ydl = yt_dlp.YoutubeDL({'format': format_option, 'quiet': True, 'simulate': True})
-                                test_info = test_ydl.extract_info(video_data['url'], download=False)
-                                if 'height' in test_info:
-                                    best_match_height = test_info['height']
-                            except:
-                                # Final fallback based on file size estimation
-                                if file_size < 5 * 1024 * 1024:  # Less than 5MB
-                                    best_match_height = 240
-                                elif file_size < 15 * 1024 * 1024:  # Less than 15MB
-                                    best_match_height = 360
-                                elif file_size < 35 * 1024 * 1024:  # Less than 35MB
-                                    best_match_height = 480
-                                else:
-                                    best_match_height = 1080
-
-                        # Determine actual quality
-                        if best_match_height and best_match_height <= 240:
-                            downloaded_quality = '240p'
-                        elif best_match_height and best_match_height <= 360:
-                            downloaded_quality = '360p'
-                        elif best_match_height and best_match_height <= 480:
-                            downloaded_quality = '480p'
-                        else:
-                            downloaded_quality = '1080p'
-
-                except Exception as e:
-                    logger.error(f"Error detecting quality: {e}")
-                    # Fallback to requested quality if detection fails
-                    downloaded_quality = quality
-
-                # Check if we already have this detected quality cached
-                if video_data['qualities'].get(downloaded_quality):
-                    # Use existing file ID for detected quality
-                    file_id = video_data['qualities'][downloaded_quality]
-
-                    # Clean up downloaded file since we have cached version
-                    os.remove(downloaded_file)
-
-                    quality_message = downloaded_quality
-                    note_message = f"\n*Note: {quality} was not available, sending {downloaded_quality}*" if downloaded_quality != quality else ""
-
-                    await query.edit_message_text(f"📤 **Sending {quality_message} video...**\n*(Found in cache)*", parse_mode='Markdown')
-
-                    try:
-                        await query.message.reply_video(
-                            video=file_id,
-                            caption=f"📱 **Quality:** {quality_message}\n🎬 **Title:** {video_data['title']}{note_message}",
-                            supports_streaming=True
-                        )
-                        await query.message.delete()
-                        return
-                    except Exception as e:
-                        logger.error(f"Error sending cached video: {e}")
-                        # Continue to upload new file if cached fails
-
-                # Upload new video file
-                quality_message = downloaded_quality
-                note_message = f"\n*Note: {quality} was not available, downloaded {downloaded_quality}*" if downloaded_quality != quality else ""
-
-                await query.edit_message_text(f"📤 **Uploading {quality_message} video...**", parse_mode='Markdown')
-
-                # Send video
-                with open(downloaded_file, 'rb') as video_file:
-                    message = await query.message.reply_video(
-                        video=video_file,
-                        caption=f"📱 **Quality:** {quality_message}\n🎬 **Title:** {video_data['title']}{note_message}",
-                        supports_streaming=True
-                    )
-
-                    # Save file_id with correct detected quality (not requested quality)
-                    file_id = message.video.file_id
-                    bot_instance.video_data[video_id]['qualities'][downloaded_quality] = file_id
-                    bot_instance.save_data()
-
-                # Clean up downloaded file
-                os.remove(downloaded_file)
-
-                await query.message.delete()
-                return
-
-        except yt_dlp.DownloadError as e:
-            logger.error(f"yt-dlp error with format {format_option}: {e}")
-            # Clean up any partial downloads
-            for file in os.listdir('downloads'):
-                if file.startswith(f"{video_id}_temp"):
-                    try:
-                        os.remove(f"downloads/{file}")
-                    except:
-                        pass
-            continue
-        except Exception as e:
-            logger.error(f"Unexpected error with format {format_option}: {e}")
-            # Clean up any partial downloads
-            for file in os.listdir('downloads'):
-                if file.startswith(f"{video_id}_temp"):
-                    try:
-                        os.remove(f"downloads/{file}")
-                    except:
-                        pass
-            continue
-
-    # If all formats failed, try ultimate fallback
-    try:
-        # Try with just 'best' format as last resort
-        ydl_opts_fallback = {
-            'format': 'best[height<=720]/best',
-            'outtmpl': f'downloads/{filename}',
-            'quiet': True,
-            'no_warnings': True,
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts_fallback) as ydl:
-            ydl.download([video_data['url']])
-
-        # Find downloaded file
-        downloaded_file = None
-        for file in os.listdir('downloads'):
-            if file.startswith(f"{video_id}_temp"):
-                downloaded_file = f"downloads/{file}"
-                break
-
-        if downloaded_file and os.path.exists(downloaded_file):
-            # Use file size to estimate quality
-            file_size = os.path.getsize(downloaded_file)
-            duration_minutes = video_data.get('duration', 300) / 60
-            size_per_minute = file_size / duration_minutes / (1024 * 1024)
-
-            if size_per_minute < 2:
-                fallback_quality = '240p'
-            elif size_per_minute < 4:
-                fallback_quality = '360p'
-            elif size_per_minute < 8:
-                fallback_quality = '480p'
-            else:
-                fallback_quality = '720p'
-
-            await query.edit_message_text(f"📤 **Uploading {fallback_quality} video...**\n*({quality} not available, sending best available)*", parse_mode='Markdown')
-
-            # Send video
-            with open(downloaded_file, 'rb') as video_file:
-                message = await query.message.reply_video(
-                    video=video_file,
-                    caption=f"📱 **Quality:** {fallback_quality}\n🎬 **Title:** {video_data['title']}\n*Note: {quality} was not available*",
-                    supports_streaming=True
-                )
-
-                # Save to database
-                file_id = message.video.file_id
-                bot_instance.video_data[video_id]['qualities'][fallback_quality] = file_id
-                bot_instance.save_data()
-
-            os.remove(downloaded_file)
-            await query.message.delete()
-            return
-
-    except Exception as e:
-        logger.error(f"Ultimate fallback failed: {e}")
-
-    # If everything fails
-    await query.edit_message_text(
-        f"❌ **Download Error:**\n"
-        f"Unable to download {quality} quality.\n"
-        f"This video may be:\n"
-        f"• Restricted in your region\n"
-        f"• Age-restricted\n" 
-        f"• Live stream (not downloadable)\n"
-        f"• Premium content\n\n"
-        f"Try a different YouTube video."
-    )
-    
 
 def live_log_loop():
     import time
