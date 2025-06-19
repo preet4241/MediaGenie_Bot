@@ -529,7 +529,7 @@ async def download_and_send_video_new(query, video_info, quality, video_id, cont
 
                     print(f"DEBUG: Detected quality: {downloaded_quality}")
 
-                               except Exception as e:
+                except Exception as e:
                     logger.error(f"Error in download process: {e}")
                     downloaded_quality = quality  # Fallback to requested
 
