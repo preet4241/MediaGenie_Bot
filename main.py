@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Bot Token - Get from environment variable or use default
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = "7881316549:AAF6114H4tcf3QtpmYHEB49MjfheFRzC5oM"
 LIVE_LOG_CHANNEL_ID = os.getenv("LIVE_LOG_CHANNEL_ID")
 DOWNLOAD_LOG_CHANNEL_ID = os.getenv("DOWNLOAD_LOG_CHANNEL_ID")
 
