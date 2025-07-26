@@ -1,0 +1,4 @@
+yt-dlp
+httpx
+beautifulsoup4
+asyncio
