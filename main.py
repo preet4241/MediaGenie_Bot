@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-BOT_TOKEN = "7709734241:AAHZdJvH55fUnpyg9gZv1v-GiJaspxFr1-s"
+BOT_TOKEN = "8087068418:AAG7JXckIaAWpJAZ22iV_jOP_hzbVKkgQ7E"
 CHANNEL_ID = ""  # Optional - owner will add channels through bot
 OWNER_ID = "5458600995"
 
